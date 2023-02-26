@@ -9,11 +9,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 
-import javax.swing.JFrame;
-import javax.swing.JOptionPane;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
+import javax.swing.*;
 
 /**
  * A simple Swing-based client for the chat server.  Graphically
@@ -36,9 +32,13 @@ public class ChatClient {
     BufferedReader in;
     PrintWriter out;
     JFrame frame = new JFrame("Chatter");
+    JCheckBox broadcastCheckbox = new JCheckBox("Force broadcast");
     JTextField textField = new JTextField(40);
     JTextArea messageArea = new JTextArea(8, 40);
-    // TODO: Add a list box
+
+    DefaultListModel<String> connectedClients = new DefaultListModel<String>();
+
+    JList<String> clientArea = new JList<>(connectedClients);
 
     /**
      * Constructs the client by laying out the GUI and registering a
@@ -53,8 +53,11 @@ public class ChatClient {
         // Layout GUI
         textField.setEditable(false);
         messageArea.setEditable(false);
+        clientArea.setFixedCellWidth(150);
         frame.getContentPane().add(textField, "North");
+        frame.getContentPane().add(broadcastCheckbox, "South");
         frame.getContentPane().add(new JScrollPane(messageArea), "Center");
+        frame.getContentPane().add(clientArea, "East");
         frame.pack();
 
         // TODO: You may have to edit this event handler to handle point to point messaging,
@@ -67,7 +70,15 @@ public class ChatClient {
              * the text area in preparation for the next message.
              */
             public void actionPerformed(ActionEvent e) {
-                out.println(textField.getText());
+                String msg = textField.getText();
+                if (!clientArea.getSelectedValuesList().isEmpty()) {
+                    String names = String.join(",",clientArea.getSelectedValuesList());
+                    if (!msg.contains(">>")) {
+                        msg = names+">>"+msg;
+                    }
+                }
+                if (broadcastCheckbox.isSelected() && msg.contains(">>")) msg=msg.split(">>")[1];
+                out.println(msg);
                 textField.setText("");
             }
         });
@@ -120,6 +131,11 @@ public class ChatClient {
                 textField.setEditable(true);
             } else if (line.startsWith("MESSAGE")) {
                 messageArea.append(line.substring(8) + "\n");
+            } else if (line.startsWith("CONNECTIONLISTUPDATE")) {
+                connectedClients.clear();
+                for (String name : line.substring(22).split(",")) {
+                    connectedClients.addElement(name);
+                }
             }
         }
     }

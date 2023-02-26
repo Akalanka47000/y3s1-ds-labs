@@ -8,6 +8,7 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashSet;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A multithreaded chat room server.  When a client connects the
@@ -46,7 +47,7 @@ public class ChatServer {
      * The set of all the print writers for all the clients.  This
      * set is kept so we can easily broadcast messages.
      */
-    private static HashSet<PrintWriter> writers = new HashSet<PrintWriter>();
+    private static ConcurrentHashMap<String, PrintWriter> writers = new ConcurrentHashMap<String, PrintWriter>();
 
     /**
      * The appplication main method, which just listens on a port and
@@ -63,6 +64,15 @@ public class ChatServer {
             }
         } finally {
             listener.close();
+        }
+    }
+
+    private static void updateConnectionList () {
+        for (PrintWriter writer : writers.values()) {
+            writer.println("CONNECTIONLISTUPDATE : " + names.stream().reduce("", (acc, curr) -> {
+                acc += curr + ",";
+                return acc;
+            }));
         }
     }
 
@@ -113,23 +123,22 @@ public class ChatServer {
                     
                     // TODO: Add code to ensure the thread safety of the
                     // the shared variable 'names'
-                    if (!names.contains(name)) {
+                    synchronized (this) {
+                        if (!names.contains(name)) {
                             names.add(name);
                             break;
                         }
-                    
+                    }
                  }
 
                 // Now that a successful name has been chosen, add the
                 // socket's print writer to the set of all writers so
                 // this client can receive broadcast messages.
                 out.println("NAMEACCEPTED");
-                writers.add(out);
-                
-                // TODO: You may have to add some code here to broadcast all clients the new
-                // client's name for the task 9 on the lab sheet. 
+                writers.put(name, out);
 
-                
+                updateConnectionList();
+
                 // Accept messages from this client and broadcast them.
                 // Ignore other clients that cannot be broadcasted to.
                 while (true) {
@@ -137,12 +146,18 @@ public class ChatServer {
                     if (input == null) {
                         return;
                     }
-                    
-                    // TODO: Add code to send a message to a specific client and not
-                    // all clients. You may have to use a HashMap to store the sockets along 
-                    // with the chat client names
-                    for (PrintWriter writer : writers) {
-                        writer.println("MESSAGE " + name + ": " + input);
+                    if (input.contains(">>")) {
+                        String message = "MESSAGE " + name + ": " + input;
+                        out.println(message);
+                        String[] receivers = input.split(">>")[0].split(",");
+                        for (String receiver : receivers) {
+                            PrintWriter receiverWriter = writers.get(receiver);
+                            if (receiverWriter != null) receiverWriter.println(message);
+                        }
+                    } else {
+                        for (PrintWriter writer : writers.values()) {
+                            writer.println("MESSAGE " + name + ": " + input);
+                        }
                     }
                 }
             }// TODO: Handle the SocketException here to handle a client closing the socket
@@ -155,11 +170,13 @@ public class ChatServer {
                     names.remove(name);
                 }
                 if (out != null) {
-                    writers.remove(out);
+                    writers.remove(name);
                 }
                 try {
                     socket.close();
                 } catch (IOException e) {
+                } finally {
+                    updateConnectionList();
                 }
             }
         }
